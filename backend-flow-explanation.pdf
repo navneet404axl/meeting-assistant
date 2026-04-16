@@ -1,0 +1,446 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 2630 >>
+stream
+BT
+/F1 10 Tf
+54 738 Td
+(Backend Flow Explanation: database.py, meeting.py, and main.py) Tj
+0 -14 Td
+0 -14 Td
+(Big Picture Flow) Tj
+0 -14 Td
+(When the backend starts:) Tj
+0 -14 Td
+(1. database.py creates the database connection setup.) Tj
+0 -14 Td
+(2. meeting.py defines the meetings table.) Tj
+0 -14 Td
+(3. main.py creates the FastAPI app, creates the table if needed, and exposes API endpoints.) Tj
+0 -14 Td
+0 -14 Td
+(Then when a user uploads a file:) Tj
+0 -14 Td
+(1. Request hits POST /api/meetings.) Tj
+0 -14 Td
+(2. FastAPI receives the uploaded file and optional title.) Tj
+0 -14 Td
+(3. Code validates the filename and extension.) Tj
+0 -14 Td
+(4. File is saved into uploads/.) Tj
+0 -14 Td
+(5. A row is created in the SQLite database with status queued.) Tj
+0 -14 Td
+(6. API returns the new meeting_id.) Tj
+0 -14 Td
+0 -14 Td
+(1. database.py) Tj
+0 -14 Td
+(This file is responsible for database connection plumbing.) Tj
+0 -14 Td
+0 -14 Td
+(from sqlalchemy import create_engine) Tj
+0 -14 Td
+(Imports create_engine, which creates the main connection object SQLAlchemy uses to talk to the) Tj
+0 -14 Td
+(database.) Tj
+0 -14 Td
+0 -14 Td
+(from sqlalchemy.orm import sessionmaker, declarative_base) Tj
+0 -14 Td
+(Imports two ORM tools:) Tj
+0 -14 Td
+(- sessionmaker creates database sessions, which you use to query, insert, update, or delete) Tj
+0 -14 Td
+(rows.) Tj
+0 -14 Td
+(- declarative_base creates a base class for your database models, like Meeting.) Tj
+0 -14 Td
+0 -14 Td
+(DATABASE_URL = "sqlite:///./app.db") Tj
+0 -14 Td
+(This says: use SQLite and store data in a local file called app.db. If you run the server from) Tj
+0 -14 Td
+(backend/, the file will usually be backend/app.db.) Tj
+0 -14 Td
+0 -14 Td
+(engine = create_engine\(...\)) Tj
+0 -14 Td
+(The engine is SQLAlchemy's connection object. It knows how to talk to your SQLite database.) Tj
+0 -14 Td
+0 -14 Td
+(connect_args={"check_same_thread": False}) Tj
+0 -14 Td
+(This is needed because FastAPI may handle requests across threads, and SQLite otherwise) Tj
+0 -14 Td
+(complains about thread usage.) Tj
+0 -14 Td
+0 -14 Td
+(SessionLocal = sessionmaker\(autocommit=False, autoflush=False, bind=engine\)) Tj
+0 -14 Td
+(This creates a session factory. A session is what your code uses to insert, query, update, or) Tj
+0 -14 Td
+(delete database records.) Tj
+0 -14 Td
+(- autocommit=False means changes are not saved automatically; you must call db.commit\(\).) Tj
+0 -14 Td
+(- autoflush=False means SQLAlchemy will not automatically push pending changes before every) Tj
+0 -14 Td
+(query.) Tj
+0 -14 Td
+(- bind=engine connects these sessions to your SQLite database engine.) Tj
+0 -14 Td
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 2349 >>
+stream
+BT
+/F1 10 Tf
+54 738 Td
+(Base = declarative_base\(\)) Tj
+0 -14 Td
+(This is the parent class your database models inherit from. Your Meeting model uses this.) Tj
+0 -14 Td
+0 -14 Td
+(def get_db\(\):) Tj
+0 -14 Td
+(This is a FastAPI dependency. Every time an API endpoint needs database access, FastAPI calls) Tj
+0 -14 Td
+(get_db\(\).) Tj
+0 -14 Td
+0 -14 Td
+(db = SessionLocal\(\)) Tj
+0 -14 Td
+(yield db) Tj
+0 -14 Td
+(db.close\(\)) Tj
+0 -14 Td
+(It opens a database session, gives it to the endpoint, then closes it after the request) Tj
+0 -14 Td
+(finishes.) Tj
+0 -14 Td
+0 -14 Td
+(2. meeting.py) Tj
+0 -14 Td
+(This file defines your database table.) Tj
+0 -14 Td
+0 -14 Td
+(class Meeting\(Base\):) Tj
+0 -14 Td
+(This creates a SQLAlchemy model. A model is a Python class that maps to a database table.) Tj
+0 -14 Td
+0 -14 Td
+(__tablename__ = "meetings") Tj
+0 -14 Td
+(The table will be named meetings.) Tj
+0 -14 Td
+0 -14 Td
+(id = Column\(Integer, primary_key=True, index=True\)) Tj
+0 -14 Td
+(Each meeting gets a unique integer ID. This is the meeting_id your API returns.) Tj
+0 -14 Td
+0 -14 Td
+(title = Column\(String, nullable=True\)) Tj
+0 -14 Td
+(The meeting title is optional. If the user does not provide one, it can be NULL.) Tj
+0 -14 Td
+0 -14 Td
+(filename = Column\(String, nullable=False\)) Tj
+0 -14 Td
+(The saved upload filename is required. This stores the generated safe filename, not) Tj
+0 -14 Td
+(necessarily the original user filename.) Tj
+0 -14 Td
+0 -14 Td
+(status = Column\(String, nullable=False, default="queued"\)) Tj
+0 -14 Td
+(The meeting processing status starts as queued. Right now your planned statuses are queued,) Tj
+0 -14 Td
+(processing, done, and failed. Currently the code only creates queued; no worker exists yet to) Tj
+0 -14 Td
+(update it.) Tj
+0 -14 Td
+0 -14 Td
+(created_at = Column\(DateTime\(timezone=True\), server_default=func.now\(\)\)) Tj
+0 -14 Td
+(The database automatically records when the meeting row was created.) Tj
+0 -14 Td
+0 -14 Td
+(3. main.py) Tj
+0 -14 Td
+(This is the actual FastAPI application.) Tj
+0 -14 Td
+0 -14 Td
+(UPLOAD_DIR = "uploads") Tj
+0 -14 Td
+(os.makedirs\(UPLOAD_DIR, exist_ok=True\)) Tj
+0 -14 Td
+(This says uploaded files should go into an uploads folder. If that folder does not exist,) Tj
+0 -14 Td
+(create it. Because this is a relative path, it depends where you run the server from.) Tj
+0 -14 Td
+ET
+endstream
+endobj
+4 0 obj
+<< /Length 2180 >>
+stream
+BT
+/F1 10 Tf
+54 738 Td
+(app = FastAPI\(title="Meeting Assistant API"\)) Tj
+0 -14 Td
+(Creates the FastAPI app.) Tj
+0 -14 Td
+0 -14 Td
+(Base.metadata.create_all\(bind=engine\)) Tj
+0 -14 Td
+(This tells SQLAlchemy to create any missing database tables based on models like Meeting. If) Tj
+0 -14 Td
+(app.db does not exist yet, this helps create the meetings table.) Tj
+0 -14 Td
+0 -14 Td
+(@app.get\("/health"\)) Tj
+0 -14 Td
+(def health\(\):) Tj
+0 -14 Td
+(    return {"ok": True}) Tj
+0 -14 Td
+(A simple health check endpoint. If you visit /health, it returns {"ok": true}. This is useful) Tj
+0 -14 Td
+(to confirm the backend is running.) Tj
+0 -14 Td
+0 -14 Td
+(Upload Endpoint) Tj
+0 -14 Td
+(@app.post\("/api/meetings"\)) Tj
+0 -14 Td
+(async def create_meeting\(...\)) Tj
+0 -14 Td
+(This handles file uploads.) Tj
+0 -14 Td
+0 -14 Td
+(file: UploadFile = File\(...\)) Tj
+0 -14 Td
+(This means a file is required in the request.) Tj
+0 -14 Td
+0 -14 Td
+(title: str | None = Form\(default=None\)) Tj
+0 -14 Td
+(This means the user may optionally send a title as form data.) Tj
+0 -14 Td
+0 -14 Td
+(db: Session = Depends\(get_db\)) Tj
+0 -14 Td
+(This tells FastAPI to give this endpoint a database session from get_db\(\).) Tj
+0 -14 Td
+0 -14 Td
+(if not file.filename:) Tj
+0 -14 Td
+(    raise HTTPException\(status_code=400, detail="Missing filename"\)) Tj
+0 -14 Td
+(If the uploaded file has no filename, reject the request with 400 Bad Request.) Tj
+0 -14 Td
+0 -14 Td
+(ext = os.path.splitext\(file.filename\)[1].lower\(\)) Tj
+0 -14 Td
+(Extracts the file extension, like .mp3 or .mp4.) Tj
+0 -14 Td
+0 -14 Td
+(allowed = {".mp3", ".wav", ".m4a", ".mp4", ".webm"}) Tj
+0 -14 Td
+(Only these audio/video file types are allowed.) Tj
+0 -14 Td
+0 -14 Td
+(if ext not in allowed:) Tj
+0 -14 Td
+(    raise HTTPException\(...\)) Tj
+0 -14 Td
+(Reject unsupported files.) Tj
+0 -14 Td
+0 -14 Td
+(safe_name = f"{uuid.uuid4\(\).hex}{ext}") Tj
+0 -14 Td
+(Creates a new random filename. This avoids problems with strange user filenames and prevents) Tj
+0 -14 Td
+(overwriting files with the same name.) Tj
+0 -14 Td
+0 -14 Td
+(save_path = os.path.join\(UPLOAD_DIR, safe_name\)) Tj
+0 -14 Td
+(Builds the final upload path.) Tj
+0 -14 Td
+ET
+endstream
+endobj
+5 0 obj
+<< /Length 2277 >>
+stream
+BT
+/F1 10 Tf
+54 738 Td
+(contents = await file.read\(\)) Tj
+0 -14 Td
+(Reads the uploaded file into memory. For small MVP files this is okay. Later, for big video) Tj
+0 -14 Td
+(files, streaming or chunked saving is better.) Tj
+0 -14 Td
+0 -14 Td
+(with open\(save_path, "wb"\) as f:) Tj
+0 -14 Td
+(    f.write\(contents\)) Tj
+0 -14 Td
+(Saves the uploaded file to disk.) Tj
+0 -14 Td
+0 -14 Td
+(meeting = Meeting\(title=title, filename=safe_name, status="queued"\)) Tj
+0 -14 Td
+(Creates a new database object in Python.) Tj
+0 -14 Td
+0 -14 Td
+(db.add\(meeting\)) Tj
+0 -14 Td
+(db.commit\(\)) Tj
+0 -14 Td
+(db.refresh\(meeting\)) Tj
+0 -14 Td
+(This inserts the row into the database, saves it, and refreshes the object so meeting.id is) Tj
+0 -14 Td
+(available.) Tj
+0 -14 Td
+0 -14 Td
+(return {"meeting_id": meeting.id, "status": meeting.status}) Tj
+0 -14 Td
+(Returns the ID and current status to the frontend.) Tj
+0 -14 Td
+0 -14 Td
+(Status Endpoint) Tj
+0 -14 Td
+(@app.get\("/api/meetings/{meeting_id}/status"\)) Tj
+0 -14 Td
+(This lets the frontend ask: Is this meeting done yet?) Tj
+0 -14 Td
+0 -14 Td
+(meeting = db.query\(Meeting\).filter\(Meeting.id == meeting_id\).first\(\)) Tj
+0 -14 Td
+(Looks for a meeting row with that ID.) Tj
+0 -14 Td
+0 -14 Td
+(if not meeting:) Tj
+0 -14 Td
+(    raise HTTPException\(status_code=404, detail="Meeting not found"\)) Tj
+0 -14 Td
+(If no meeting exists, return 404.) Tj
+0 -14 Td
+0 -14 Td
+(return {"meeting_id": meeting.id, "status": meeting.status}) Tj
+0 -14 Td
+(Returns the meeting status.) Tj
+0 -14 Td
+0 -14 Td
+(Meeting Detail Endpoint) Tj
+0 -14 Td
+(@app.get\("/api/meetings/{meeting_id}"\)) Tj
+0 -14 Td
+(This gets basic metadata about one meeting.) Tj
+0 -14 Td
+0 -14 Td
+(It returns meeting_id, title, filename, status, and created_at.) Tj
+0 -14 Td
+0 -14 Td
+(Current System Flow) Tj
+0 -14 Td
+(1. You start the backend with uvicorn app.main:app --reload --port 8000.) Tj
+0 -14 Td
+(2. FastAPI starts.) Tj
+0 -14 Td
+(3. main.py imports Base, engine, and get_db from database.py.) Tj
+0 -14 Td
+(4. main.py imports Meeting from meeting.py.) Tj
+0 -14 Td
+(5. Base.metadata.create_all\(bind=engine\) creates the meetings table if missing.) Tj
+0 -14 Td
+(6. User uploads a file to POST /api/meetings.) Tj
+0 -14 Td
+(7. The uploaded file gets saved in uploads/.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Length 757 >>
+stream
+BT
+/F1 10 Tf
+54 738 Td
+(8. A database row is inserted into meetings.) Tj
+0 -14 Td
+(9. The API returns the new meeting_id.) Tj
+0 -14 Td
+(10. Frontend can poll GET /api/meetings/1/status.) Tj
+0 -14 Td
+(11. Backend looks up meeting 1 and returns its status.) Tj
+0 -14 Td
+0 -14 Td
+(Current Limitation) Tj
+0 -14 Td
+(Right now this is not doing transcription yet. It only does:) Tj
+0 -14 Td
+(upload file -> save file -> create DB row -> return queued status) Tj
+0 -14 Td
+0 -14 Td
+(That is still exactly what Step 1 should do. The next step would be adding a background worker) Tj
+0 -14 Td
+(or temporary fake processing function that changes queued -> processing -> done. Then later) Tj
+0 -14 Td
+(you connect Whisper to actually transcribe the saved upload.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+8 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+10 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 5 0 R >>
+endobj
+11 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 6 0 R >>
+endobj
+12 0 obj
+<< /Type /Pages /Kids [7 0 R 8 0 R 9 0 R 10 0 R 11 0 R] /Count 5 >>
+endobj
+13 0 obj
+<< /Type /Catalog /Pages 12 0 R >>
+endobj
+xref
+0 14
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000002767 00000 n 
+0000005168 00000 n 
+0000007400 00000 n 
+0000009729 00000 n 
+0000010537 00000 n 
+0000010664 00000 n 
+0000010791 00000 n 
+0000010918 00000 n 
+0000011046 00000 n 
+0000011174 00000 n 
+0000011258 00000 n 
+trailer
+<< /Size 14 /Root 13 0 R >>
+startxref
+11309
+%%EOF
