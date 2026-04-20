@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Text
 from sqlalchemy.sql import func
 from app.db.database import Base
 from sqlalchemy.orm import relationship
@@ -16,3 +16,7 @@ class Meeting(Base):
         back_populates="meeting",
         cascade="all, delete-orphan"
     )
+    summary_text = Column(Text, nullable=True)
+    decisions_json = Column(Text, nullable=True)
+    action_items_json = Column(Text, nullable=True)
+    raw_model_output = Column(Text, nullable=True)

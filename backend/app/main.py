@@ -1,5 +1,8 @@
 import os
 import uuid
+import json
+from app.pipeline.extract import extract_meeting_insights
+
 from app.models.meeting import Meeting
 from app.models.transcript import TranscriptSegment
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
@@ -110,6 +113,58 @@ def transcribe_meeting(meeting_id: int, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
+@app.post("/api/meetings/{meeting_id}/extract")
+def extract_meeting(meeting_id: int, db: Session = Depends(get_db)):
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    segments = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.meeting_id == meeting_id)
+        .order_by(TranscriptSegment.start.asc())
+        .all()
+    )
+
+    if not segments:
+        raise HTTPException(
+            status_code=400,
+            detail="No transcript segments found. Run transcription first.",
+        )
+
+    transcript_segments = [
+        {
+            "start": segment.start,
+            "end": segment.end,
+            "text": segment.text,
+        }
+        for segment in segments
+    ]
+
+    try:
+        insights = extract_meeting_insights(transcript_segments)
+
+        meeting.summary_text = insights["summary"]
+        meeting.decisions_json = json.dumps(insights["decisions"])
+        meeting.action_items_json = json.dumps(insights["action_items"])
+        meeting.raw_model_output = insights["raw_model_output"]
+
+        db.commit()
+        db.refresh(meeting)
+
+        return {
+            "meeting_id": meeting.id,
+            "summary": meeting.summary_text,
+            "decisions": insights["decisions"],
+            "action_items": insights["action_items"],
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Extraction failed: {str(e)}",
+        )
+
 
 @app.get("/api/meetings/{meeting_id}/result")
 def get_result(meeting_id: int, db: Session = Depends(get_db)):
@@ -124,6 +179,9 @@ def get_result(meeting_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
+    decisions = json.loads(meeting.decisions_json) if meeting.decisions_json else []
+    action_items = json.loads(meeting.action_items_json) if meeting.action_items_json else []
+
     return {
         "meeting_id": meeting.id,
         "title": meeting.title,
@@ -131,4 +189,7 @@ def get_result(meeting_id: int, db: Session = Depends(get_db)):
         "transcript_segments": [
             {"start": s.start, "end": s.end, "text": s.text} for s in segments
         ],
+        "summary": meeting.summary_text,
+        "decisions": decisions,
+        "action_items": action_items,
     }
