@@ -166,6 +166,23 @@ def extract_meeting(meeting_id: int, db: Session = Depends(get_db)):
         )
 
 
+@app.get("/api/meetings/{meeting_id}/insights")
+def get_insights(meeting_id: int, db: Session = Depends(get_db)):
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    decisions = json.loads(meeting.decisions_json) if meeting.decisions_json else []
+    action_items = json.loads(meeting.action_items_json) if meeting.action_items_json else []
+
+    return {
+        "meeting_id": meeting.id,
+        "summary": meeting.summary_text,
+        "decisions": decisions,
+        "action_items": action_items,
+    }
+
+
 @app.get("/api/meetings/{meeting_id}/result")
 def get_result(meeting_id: int, db: Session = Depends(get_db)):
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
