@@ -8,11 +8,15 @@ import {
   Decision,
   MeetingMeta,
   MeetingResult,
+  SpeakerOption,
   TranscriptSegment,
+  diarizeMeeting,
   extractMeeting,
   getInsights,
   getMeeting,
   getResult,
+  getSpeakers,
+  saveSpeakerMapping,
   transcribeMeeting,
 } from "@/lib/api";
 
@@ -21,6 +25,24 @@ function formatSeconds(seconds: number) {
   const minutes = Math.floor(total / 60);
   const secs = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function parseSummarySections(summary: string | null | undefined) {
+  if (!summary) {
+    return [];
+  }
+
+  return summary
+    .split(/\n\s*\n/)
+    .map((section) => section.trim())
+    .filter(Boolean)
+    .map((section) => {
+      const [title, ...rest] = section.split("\n");
+      return {
+        title: title?.trim() || "Summary",
+        body: rest.join("\n").trim(),
+      };
+    });
 }
 
 export default function MeetingPage() {
@@ -32,7 +54,9 @@ export default function MeetingPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [working, setWorking] = useState<"transcribe" | "extract" | "refresh" | null>(null);
+  const [working, setWorking] = useState<"transcribe" | "extract" | "refresh" | "diarize" | "saveSpeakers" | null>(null);
+  const [speakers, setSpeakers] = useState<SpeakerOption[]>([]);
+  const [speakerInputs, setSpeakerInputs] = useState<Record<string, string>>({});
 
   const loadMeetingData = useCallback(async (mode: "refresh" | null = null) => {
     try {
@@ -44,13 +68,21 @@ export default function MeetingPage() {
         setError(null);
       }
 
-      const [meetingData, resultData] = await Promise.all([
+      const [meetingData, resultData, speakerData] = await Promise.all([
         getMeeting(meetingId),
         getResult(meetingId),
+        getSpeakers(meetingId),
       ]);
 
       setMeeting(meetingData);
       setResult(resultData);
+      setSpeakers(speakerData.speakers);
+      setSpeakerInputs(
+        speakerData.speakers.reduce<Record<string, string>>((acc, speaker) => {
+          acc[speaker.speaker_label] = speaker.display_name;
+          return acc;
+        }, {}),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load meeting.");
     } finally {
@@ -64,9 +96,10 @@ export default function MeetingPage() {
 
     async function loadInitialMeetingData() {
       try {
-        const [meetingData, resultData] = await Promise.all([
+        const [meetingData, resultData, speakerData] = await Promise.all([
           getMeeting(meetingId),
           getResult(meetingId),
+          getSpeakers(meetingId),
         ]);
 
         if (!active) {
@@ -75,6 +108,13 @@ export default function MeetingPage() {
 
         setMeeting(meetingData);
         setResult(resultData);
+        setSpeakers(speakerData.speakers);
+        setSpeakerInputs(
+          speakerData.speakers.reduce<Record<string, string>>((acc, speaker) => {
+            acc[speaker.speaker_label] = speaker.display_name;
+            return acc;
+          }, {}),
+        );
         setError(null);
       } catch (err) {
         if (!active) {
@@ -98,6 +138,7 @@ export default function MeetingPage() {
   const transcriptSegments = result?.transcript_segments ?? [];
   const decisions = result?.decisions ?? [];
   const actionItems = result?.action_items ?? [];
+  const summarySections = parseSummarySections(result?.summary);
 
   const stats = useMemo(
     () => [
@@ -143,6 +184,35 @@ export default function MeetingPage() {
       setMessage("Insights are ready.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Insight extraction failed.");
+      setWorking(null);
+    }
+  }
+
+  async function handleDiarize() {
+    try {
+      setWorking("diarize");
+      setMessage("Running speaker diarization...");
+      setError(null);
+      await diarizeMeeting(meetingId);
+      await loadMeetingData();
+      setMessage("Speaker labels are ready.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Diarization failed.");
+      setWorking(null);
+    }
+  }
+
+  async function handleSaveSpeakers() {
+    try {
+      setWorking("saveSpeakers");
+      setMessage("Saving speaker names...");
+      setError(null);
+      const saved = await saveSpeakerMapping(meetingId, speakerInputs);
+      setSpeakers(saved.speakers);
+      await loadMeetingData();
+      setMessage("Speaker names updated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Saving speaker names failed.");
       setWorking(null);
     }
   }
@@ -213,6 +283,13 @@ export default function MeetingPage() {
               {working === "transcribe" ? "Transcribing..." : "Run transcription"}
             </button>
             <button
+              onClick={() => void handleDiarize()}
+              disabled={working !== null}
+              className="rounded-md bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {working === "diarize" ? "Diarizing..." : "Run diarization"}
+            </button>
+            <button
               onClick={() => void handleExtract()}
               disabled={working !== null}
               className="rounded-md bg-cyan-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -248,10 +325,10 @@ export default function MeetingPage() {
           </p>
         ) : null}
 
-        <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
+        <section className="grid items-start gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="self-start rounded-lg border border-black/10 bg-white p-6 shadow-sm">
             <h2 className="text-xl font-semibold">Transcript</h2>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-4 grid max-h-[70vh] gap-3 overflow-y-auto pr-2">
               {transcriptSegments.length ? (
                 transcriptSegments.map((segment: TranscriptSegment, index) => (
                   <div
@@ -260,6 +337,9 @@ export default function MeetingPage() {
                   >
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                       {formatSeconds(segment.start)} - {formatSeconds(segment.end)}
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-cyan-800">
+                      {segment.speaker_name || segment.speaker_label || "Unassigned speaker"}
                     </p>
                     <p className="mt-2 text-sm leading-7 text-slate-800">
                       {segment.text}
@@ -274,17 +354,72 @@ export default function MeetingPage() {
             </div>
           </div>
 
-          <div className="grid gap-6">
+          <div className="grid self-start gap-6">
+            <section className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold">Speakers</h2>
+                <button
+                  onClick={() => void handleSaveSpeakers()}
+                  disabled={working !== null || !speakers.length}
+                  className="rounded-md border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                >
+                  {working === "saveSpeakers" ? "Saving..." : "Save speaker names"}
+                </button>
+              </div>
+              <div className="mt-4 grid max-h-72 gap-3 overflow-y-auto pr-2">
+                {speakers.length ? (
+                  speakers.map((speaker) => (
+                    <label
+                      key={speaker.speaker_label}
+                      className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                    >
+                      <span className="font-medium text-slate-700">{speaker.speaker_label}</span>
+                      <input
+                        value={speakerInputs[speaker.speaker_label] ?? speaker.display_name}
+                        onChange={(event) =>
+                          setSpeakerInputs((current) => ({
+                            ...current,
+                            [speaker.speaker_label]: event.target.value,
+                          }))
+                        }
+                        className="rounded-md border border-slate-300 bg-white px-3 py-2 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+                      />
+                    </label>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+                    No speakers detected yet. Run diarization after transcription.
+                  </p>
+                )}
+              </div>
+            </section>
+
             <section className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Summary</h2>
-              <p className="mt-4 text-sm leading-7 text-slate-700">
-                {result?.summary || "No summary yet. Generate insights to fill this in."}
-              </p>
+              <div className="mt-4 grid max-h-80 gap-3 overflow-y-auto pr-2">
+                {summarySections.length ? (
+                  summarySections.map((section, index) => (
+                    <div
+                      key={`${section.title}-${index}`}
+                      className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3"
+                    >
+                      <p className="text-sm font-semibold text-slate-900">{section.title}</p>
+                      <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700">
+                        {section.body || section.title}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+                    No summary yet. Generate insights to fill this in.
+                  </p>
+                )}
+              </div>
             </section>
 
             <section className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Decisions</h2>
-              <div className="mt-4 grid gap-3">
+              <div className="mt-4 grid max-h-72 gap-3 overflow-y-auto pr-2">
                 {decisions.length ? (
                   decisions.map((decision: Decision, index) => (
                     <div
@@ -307,7 +442,7 @@ export default function MeetingPage() {
 
             <section className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
               <h2 className="text-xl font-semibold">Action items</h2>
-              <div className="mt-4 overflow-x-auto">
+              <div className="mt-4 max-h-[32rem] overflow-auto pr-2">
                 {actionItems.length ? (
                   <table className="min-w-full table-fixed border-collapse text-left text-sm">
                     <thead>
@@ -315,6 +450,7 @@ export default function MeetingPage() {
                         <th className="pb-3 pr-4 font-medium">Task</th>
                         <th className="pb-3 pr-4 font-medium">Owner</th>
                         <th className="pb-3 pr-4 font-medium">Due</th>
+                        <th className="pb-3 pr-4 font-medium">Mentioned</th>
                         <th className="pb-3 font-medium">Priority</th>
                       </tr>
                     </thead>
@@ -329,8 +465,9 @@ export default function MeetingPage() {
                           </td>
                           <td className="py-3 pr-4 text-slate-700">{item.owner || "-"}</td>
                           <td className="py-3 pr-4 text-slate-700">
-                            {item.due_date_iso || item.timestamp || "-"}
+                            {item.due_date_iso || "-"}
                           </td>
+                          <td className="py-3 pr-4 text-slate-700">{item.timestamp || "-"}</td>
                           <td className="py-3 text-slate-700">{item.priority || "-"}</td>
                         </tr>
                       ))}

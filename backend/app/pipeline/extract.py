@@ -23,7 +23,11 @@ def build_transcript_text(segments: list[dict]) -> str:
         start = format_timestamp(segment["start"])
         end = format_timestamp(segment["end"])
         text = segment["text"].strip()
-        lines.append(f"[{start}-{end}] {text}")
+        speaker = segment.get("speaker_name") or segment.get("speaker")
+        if speaker:
+            lines.append(f"[{start}-{end}] {speaker}: {text}")
+        else:
+            lines.append(f"[{start}-{end}] {text}")
 
     return "\n".join(lines)
 
@@ -39,6 +43,65 @@ def extract_json_from_text(text: str) -> dict:
         raise ValueError("No JSON object found in model response")
 
     return json.loads(match.group(0))
+
+
+def normalize_text(value) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if cleaned.lower() in {"null", "none", "n/a", "-", "unknown"}:
+        return None
+    return cleaned
+
+
+def sanitize_decisions(decisions: list[dict]) -> list[dict]:
+    cleaned_decisions = []
+
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            continue
+
+        text_value = normalize_text(decision.get("text"))
+        if not text_value:
+            continue
+
+        cleaned_decisions.append(
+            {
+                "text": text_value,
+                "timestamp": normalize_text(decision.get("timestamp")),
+            }
+        )
+
+    return cleaned_decisions
+
+
+def sanitize_action_items(action_items: list[dict]) -> list[dict]:
+    cleaned_action_items = []
+
+    for action_item in action_items:
+        if not isinstance(action_item, dict):
+            continue
+
+        task_value = normalize_text(action_item.get("task"))
+        if not task_value:
+            continue
+
+        cleaned_action_items.append(
+            {
+                "task": task_value,
+                "owner": normalize_text(action_item.get("owner")),
+                "due_date_iso": normalize_text(action_item.get("due_date_iso")),
+                "evidence_quote": normalize_text(action_item.get("evidence_quote")) or "",
+                "timestamp": normalize_text(action_item.get("timestamp")),
+                "priority": normalize_text(action_item.get("priority")),
+            }
+        )
+
+    return cleaned_action_items
 
 
 def chunk_transcript_segments(transcript_segments: list[dict], window_seconds: int = SUMMARY_WINDOW_SECONDS) -> list[list[dict]]:
@@ -175,8 +238,7 @@ def extract_meeting_insights(transcript_segments: list[dict]) -> dict:
 
     return {
         "summary": merge_window_summaries(window_results),
-        "decisions": merged_decisions,
-        "action_items": merged_action_items,
+        "decisions": sanitize_decisions(merged_decisions),
+        "action_items": sanitize_action_items(merged_action_items),
         "raw_model_output": "\n\n=== WINDOW OUTPUT ===\n\n".join(raw_outputs),
     }
-

@@ -32,10 +32,28 @@ export type MeetingMeta = {
   created_at: string;
 };
 
+export type MeetingListResponse = {
+  meetings: MeetingMeta[];
+};
+
 export type TranscriptSegment = {
   start: number;
   end: number;
   text: string;
+  speaker_label?: string | null;
+  speaker_name?: string | null;
+};
+
+export type SpeakerSegment = {
+  speaker_label: string;
+  display_name: string;
+  start: number;
+  end: number;
+};
+
+export type SpeakerOption = {
+  speaker_label: string;
+  display_name: string;
 };
 
 export type Decision = {
@@ -57,6 +75,7 @@ export type MeetingResult = {
   title: string | null;
   status: string;
   transcript_segments: TranscriptSegment[];
+  speaker_segments: SpeakerSegment[];
   summary: string | null;
   decisions: Decision[];
   action_items: ActionItem[];
@@ -69,6 +88,11 @@ export type MeetingInsights = {
   action_items: ActionItem[];
 };
 
+export type SpeakerListResponse = {
+  meeting_id: number;
+  speakers: SpeakerOption[];
+};
+
 export async function createMeeting(formData: FormData) {
   return requestJson<{ meeting_id: number; status: string }>("/api/meetings", {
     method: "POST",
@@ -78,6 +102,10 @@ export async function createMeeting(formData: FormData) {
 
 export async function getMeeting(meetingId: string) {
   return requestJson<MeetingMeta>(`/api/meetings/${meetingId}`);
+}
+
+export async function listMeetings() {
+  return requestJson<MeetingListResponse>("/api/meetings");
 }
 
 export async function getResult(meetingId: string) {
@@ -103,3 +131,28 @@ export async function extractMeeting(meetingId: string) {
   });
 }
 
+export async function diarizeMeeting(meetingId: string) {
+  return requestJson<{ meeting_id: number; status: string; speaker_segments: SpeakerSegment[] }>(
+    `/api/meetings/${meetingId}/diarize`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function getSpeakers(meetingId: string) {
+  return requestJson<SpeakerListResponse>(`/api/meetings/${meetingId}/speakers`);
+}
+
+export async function saveSpeakerMapping(
+  meetingId: string,
+  mapping: Record<string, string>,
+) {
+  return requestJson<SpeakerListResponse>(`/api/meetings/${meetingId}/speakers`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ mapping }),
+  });
+}

@@ -16,6 +16,16 @@ class Meeting(Base):
         back_populates="meeting",
         cascade="all, delete-orphan"
     )
+    speaker_segments = relationship(
+        "SpeakerSegment",
+        back_populates="meeting",
+        cascade="all, delete-orphan"
+    )
+    speaker_mappings = relationship(
+        "SpeakerMapping",
+        back_populates="meeting",
+        cascade="all, delete-orphan"
+    )
     summary_text = Column(Text, nullable=True)
     decisions_json = Column(Text, nullable=True)
     action_items_json = Column(Text, nullable=True)

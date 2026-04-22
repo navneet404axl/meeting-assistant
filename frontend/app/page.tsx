@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createMeeting } from "@/lib/api";
+import { MeetingMeta, createMeeting, listMeetings } from "@/lib/api";
 
 export default function Home() {
   const router = useRouter();
@@ -10,6 +11,8 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentMeetings, setRecentMeetings] = useState<MeetingMeta[]>([]);
+  const [loadingMeetings, setLoadingMeetings] = useState(true);
 
   const fileLabel = useMemo(() => {
     if (!file) {
@@ -19,6 +22,33 @@ export default function Home() {
     const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
     return `${file.name} (${sizeMb} MB)`;
   }, [file]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadRecentMeetings() {
+      try {
+        const response = await listMeetings();
+        if (active) {
+          setRecentMeetings(response.meetings.slice(0, 10));
+        }
+      } catch {
+        if (active) {
+          setRecentMeetings([]);
+        }
+      } finally {
+        if (active) {
+          setLoadingMeetings(false);
+        }
+      }
+    }
+
+    void loadRecentMeetings();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,52 +104,98 @@ export default function Home() {
       </section>
 
       <section className="mx-auto grid max-w-6xl gap-10 px-6 py-10 sm:px-8 lg:grid-cols-[1.15fr_0.85fr]">
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-6 rounded-lg border border-black/10 bg-white p-6 shadow-sm"
-        >
-          <div className="space-y-2">
-            <h2 className="text-2xl font-semibold">Upload a meeting</h2>
-            <p className="text-sm text-slate-600">
-              Supported formats: mp3, wav, m4a, mp4, webm.
-            </p>
-          </div>
-
-          <label className="flex flex-col gap-2 text-sm font-medium">
-            Meeting title
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Weekly product sync"
-              className="rounded-md border border-slate-300 px-4 py-3 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
-            />
-          </label>
-
-          <label className="flex cursor-pointer flex-col gap-3 rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 transition hover:border-cyan-500 hover:bg-cyan-50/60">
-            <span className="text-sm font-medium">Meeting file</span>
-            <span className="text-sm text-slate-600">{fileLabel}</span>
-            <input
-              type="file"
-              accept=".mp3,.wav,.m4a,.mp4,.webm,audio/*,video/*"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className="hidden"
-            />
-          </label>
-
-          {error ? (
-            <p className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {error}
-            </p>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="inline-flex min-h-12 items-center justify-center rounded-md bg-cyan-600 px-5 py-3 font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+        <div className="grid gap-6">
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-6 rounded-lg border border-black/10 bg-white p-6 shadow-sm"
           >
-            {submitting ? "Uploading..." : "Upload and open meeting"}
-          </button>
-        </form>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-semibold">Upload a meeting</h2>
+              <p className="text-sm text-slate-600">
+                Supported formats: mp3, wav, m4a, mp4, webm.
+              </p>
+            </div>
+
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Meeting title
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Weekly product sync"
+                className="rounded-md border border-slate-300 px-4 py-3 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+              />
+            </label>
+
+            <label className="flex cursor-pointer flex-col gap-3 rounded-md border border-dashed border-slate-300 bg-slate-50 p-5 transition hover:border-cyan-500 hover:bg-cyan-50/60">
+              <span className="text-sm font-medium">Meeting file</span>
+              <span className="text-sm text-slate-600">{fileLabel}</span>
+              <input
+                type="file"
+                accept=".mp3,.wav,.m4a,.mp4,.webm,audio/*,video/*"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                className="hidden"
+              />
+            </label>
+
+            {error ? (
+              <p className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {error}
+              </p>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex min-h-12 items-center justify-center rounded-md bg-cyan-600 px-5 py-3 font-medium text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {submitting ? "Uploading..." : "Upload and open meeting"}
+            </button>
+          </form>
+
+          <section className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
+            <div>
+              <h2 className="text-2xl font-semibold">Recent meetings</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Reopen older uploads from the home page anytime.
+              </p>
+            </div>
+
+            <div className="mt-4 grid max-h-[28rem] gap-3 overflow-y-auto pr-2">
+              {loadingMeetings ? (
+                <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+                  Loading meetings...
+                </p>
+              ) : recentMeetings.length ? (
+                recentMeetings.map((meeting) => (
+                  <Link
+                    key={meeting.meeting_id}
+                    href={`/meetings/${meeting.meeting_id}`}
+                    className="rounded-md border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-cyan-400 hover:bg-cyan-50/60"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm uppercase tracking-wide text-slate-500">
+                          Meeting {meeting.meeting_id}
+                        </p>
+                        <p className="text-base font-semibold text-slate-900">
+                          {meeting.title || "Untitled meeting"}
+                        </p>
+                        <p className="text-sm text-slate-600">{meeting.filename}</p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-sm text-slate-700">
+                        {meeting.status}
+                      </span>
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+                  No meetings yet. Upload one to get started.
+                </p>
+              )}
+            </div>
+          </section>
+        </div>
 
         <div className="grid gap-4 self-start">
           <div className="rounded-lg border border-black/10 bg-white p-6 shadow-sm">
