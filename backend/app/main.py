@@ -6,6 +6,7 @@ from app.pipeline.extract import extract_meeting_insights
 from app.models.meeting import Meeting
 from app.models.transcript import TranscriptSegment
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from app.pipeline.transcribe import transcribe_audio
 from app.db.database import Base, engine, get_db
@@ -15,6 +16,17 @@ UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="Meeting Assistant API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 Base.metadata.create_all(bind=engine)
 
