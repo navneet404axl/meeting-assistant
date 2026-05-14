@@ -1,20 +1,26 @@
 import os
 import uuid
 import json
-from typing import Any
+from typing import Any, cast
 from app.pipeline.extract import extract_meeting_insights
 
 from app.models.meeting import Meeting
 from app.models.speaker_mapping import SpeakerMapping
 from app.models.speaker_segment import SpeakerSegment
 from app.models.transcript import TranscriptSegment
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
+
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Query
+
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.pipeline.diarize import assign_speakers_to_transcript, diarize_audio
-from app.pipeline.transcribe import transcribe_audio
+from app.pipeline.transcribe import (
+    ALLOWED_WHISPER_MODELS,
+    DEFAULT_WHISPER_MODEL,
+    transcribe_audio,
+)
 from app.db.database import Base, engine, get_db
 
 
@@ -62,24 +68,28 @@ def get_speaker_display_map(db: Session, meeting_id: int) -> dict[str, str]:
         .filter(SpeakerMapping.meeting_id == meeting_id)
         .all()
     )
-    return {mapping.speaker_label: mapping.display_name for mapping in mappings}
+    return {
+        cast(str, mapping.speaker_label): cast(str, mapping.display_name)
+        for mapping in mappings
+    }
 
 
 def serialize_speaker_segment(segment: SpeakerSegment, display_map: dict[str, str]) -> dict[str, Any]:
+    speaker_label = cast(str, segment.speaker_label)
     return {
-        "speaker_label": segment.speaker_label,
-        "display_name": display_map.get(segment.speaker_label, segment.speaker_label),
-        "start": segment.start,
-        "end": segment.end,
+        "speaker_label": speaker_label,
+        "display_name": display_map.get(speaker_label, speaker_label),
+        "start": cast(float, segment.start),
+        "end": cast(float, segment.end),
     }
 
 
 def serialize_transcript_segment(segment: TranscriptSegment, display_map: dict[str, str]) -> dict[str, Any]:
-    speaker_label = segment.speaker
+    speaker_label = cast(str | None, segment.speaker)
     return {
-        "start": segment.start,
-        "end": segment.end,
-        "text": segment.text,
+        "start": cast(float, segment.start),
+        "end": cast(float, segment.end),
+        "text": cast(str, segment.text),
         "speaker_label": speaker_label,
         "speaker_name": display_map.get(speaker_label, speaker_label) if speaker_label else None,
     }
@@ -163,7 +173,18 @@ def get_meeting(meeting_id: int, db: Session = Depends(get_db)):
     }
 
 @app.post("/api/meetings/{meeting_id}/transcribe")
-def transcribe_meeting(meeting_id: int, db: Session = Depends(get_db)):
+def transcribe_meeting(
+    meeting_id: int,
+    model_size: str = Query(default=DEFAULT_WHISPER_MODEL),
+    db: Session = Depends(get_db),
+):
+    if model_size not in ALLOWED_WHISPER_MODELS:
+        allowed = ", ".join(sorted(ALLOWED_WHISPER_MODELS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported Whisper model: {model_size}. Allowed models: {allowed}",
+        )
+
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -175,10 +196,10 @@ def transcribe_meeting(meeting_id: int, db: Session = Depends(get_db)):
     meeting.status = "processing"
     db.commit()
 
-    file_path = os.path.join(UPLOAD_DIR, meeting.filename)
+    file_path = os.path.join(UPLOAD_DIR, cast(str, meeting.filename))
 
     try:
-        segments = transcribe_audio(file_path, model_size="base")
+        segments = transcribe_audio(file_path, model_size=model_size)
 
         # Clear old segments if rerun
         db.query(TranscriptSegment).filter(TranscriptSegment.meeting_id == meeting_id).delete()
@@ -194,7 +215,12 @@ def transcribe_meeting(meeting_id: int, db: Session = Depends(get_db)):
         meeting.status = "done"
         db.commit()
 
-        return {"meeting_id": meeting_id, "status": meeting.status, "num_segments": len(segments)}
+        return {
+            "meeting_id": meeting_id,
+            "status": meeting.status,
+            "model_size": model_size,
+            "num_segments": len(segments),
+        }
 
     except Exception as e:
         meeting.status = "failed"
@@ -235,7 +261,8 @@ def extract_meeting(meeting_id: int, db: Session = Depends(get_db)):
     for transcript_segment in transcript_segments:
         speaker_label = transcript_segment.get("speaker")
         if speaker_label:
-            transcript_segment["speaker_name"] = display_map.get(speaker_label, speaker_label)
+            lbl = cast(str, speaker_label)
+            transcript_segment["speaker_name"] = display_map.get(lbl, lbl)
 
     try:
         insights = extract_meeting_insights(transcript_segments)
@@ -283,7 +310,7 @@ def diarize_meeting(meeting_id: int, db: Session = Depends(get_db)):
     meeting.status = "processing"
     db.commit()
 
-    file_path = os.path.join(UPLOAD_DIR, meeting.filename)
+    file_path = os.path.join(UPLOAD_DIR, cast(str, meeting.filename))
 
     try:
         diarized_segments = diarize_audio(file_path)
@@ -343,13 +370,14 @@ def get_speakers(meeting_id: int, db: Session = Depends(get_db)):
     seen_labels: set[str] = set()
     speakers = []
     for segment in speaker_segments:
-        if segment.speaker_label in seen_labels:
+        speaker_label = cast(str, segment.speaker_label)
+        if speaker_label in seen_labels:
             continue
-        seen_labels.add(segment.speaker_label)
+        seen_labels.add(speaker_label)
         speakers.append(
             {
-                "speaker_label": segment.speaker_label,
-                "display_name": display_map.get(segment.speaker_label, segment.speaker_label),
+                "speaker_label": speaker_label,
+                "display_name": display_map.get(speaker_label, speaker_label),
             }
         )
 
@@ -415,8 +443,8 @@ def get_insights(meeting_id: int, db: Session = Depends(get_db)):
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    decisions = json.loads(meeting.decisions_json) if meeting.decisions_json else []
-    action_items = json.loads(meeting.action_items_json) if meeting.action_items_json else []
+    decisions = json.loads(cast(str, meeting.decisions_json)) if meeting.decisions_json else []
+    action_items = json.loads(cast(str, meeting.action_items_json)) if meeting.action_items_json else []
 
     return {
         "meeting_id": meeting.id,
@@ -445,8 +473,8 @@ def get_result(meeting_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
-    decisions = json.loads(meeting.decisions_json) if meeting.decisions_json else []
-    action_items = json.loads(meeting.action_items_json) if meeting.action_items_json else []
+    decisions = json.loads(cast(str, meeting.decisions_json)) if meeting.decisions_json else []
+    action_items = json.loads(cast(str, meeting.action_items_json)) if meeting.action_items_json else []
     display_map = get_speaker_display_map(db, meeting_id)
 
     return {

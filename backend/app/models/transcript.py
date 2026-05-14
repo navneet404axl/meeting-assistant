@@ -1,16 +1,23 @@
-from sqlalchemy import Column, Integer, Float, Text, ForeignKey, String
-from sqlalchemy.orm import relationship
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from sqlalchemy import ForeignKey, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
+
+if TYPE_CHECKING:
+    from app.models.meeting import Meeting
 
 class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
 
-    id = Column(Integer, primary_key=True, index=True)
-    meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), nullable=False, index=True)
 
-    start = Column(Float, nullable=False)
-    end = Column(Float, nullable=False)
-    text = Column(Text, nullable=False)
-    speaker = Column(String, nullable=True)
+    start: Mapped[float] = mapped_column(nullable=False)
+    end: Mapped[float] = mapped_column(nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    speaker: Mapped[str | None] = mapped_column(nullable=True)
 
-    meeting = relationship("Meeting", back_populates="transcript_segments")
+    meeting: Mapped[Meeting] = relationship("Meeting", back_populates="transcript_segments")

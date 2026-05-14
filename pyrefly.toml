@@ -1,0 +1,9 @@
+python-interpreter-path = "backend/.venv/bin/python"
+search-path = ["backend"]
+
+project-includes = ["backend/**/*.py"]
+project-excludes = [
+  "**/__pycache__",
+  "**/.venv",
+  "frontend/**",
+]

@@ -30,7 +30,9 @@ def diarize_audio(file_path: str) -> list[dict]:
         raise FileNotFoundError(f"File not found: {file_path}")
 
     try:
+
         from huggingface_hub import login
+
         from pyannote.audio import Pipeline
     except ImportError as exc:
         raise RuntimeError(

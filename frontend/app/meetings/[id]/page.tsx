@@ -10,6 +10,7 @@ import {
   MeetingResult,
   SpeakerOption,
   TranscriptSegment,
+  WhisperModelSize,
   diarizeMeeting,
   extractMeeting,
   getInsights,
@@ -19,6 +20,12 @@ import {
   saveSpeakerMapping,
   transcribeMeeting,
 } from "@/lib/api";
+
+const WHISPER_MODEL_OPTIONS: { value: WhisperModelSize; label: string }[] = [
+  { value: "small.en", label: "Small English" },
+  { value: "medium.en", label: "Medium English" },
+  { value: "large-v3-turbo", label: "Large v3 Turbo" },
+];
 
 function formatSeconds(seconds: number) {
   const total = Math.max(0, Math.floor(seconds));
@@ -57,6 +64,7 @@ export default function MeetingPage() {
   const [working, setWorking] = useState<"transcribe" | "extract" | "refresh" | "diarize" | "saveSpeakers" | null>(null);
   const [speakers, setSpeakers] = useState<SpeakerOption[]>([]);
   const [speakerInputs, setSpeakerInputs] = useState<Record<string, string>>({});
+  const [whisperModelSize, setWhisperModelSize] = useState<WhisperModelSize>("small.en");
 
   const loadMeetingData = useCallback(async (mode: "refresh" | null = null) => {
     try {
@@ -152,9 +160,9 @@ export default function MeetingPage() {
   async function handleTranscribe() {
     try {
       setWorking("transcribe");
-      setMessage("Transcription started. This can take a while for large files.");
+      setMessage(`Transcription started with ${whisperModelSize}. This can take a while for large files.`);
       setError(null);
-      await transcribeMeeting(meetingId);
+      await transcribeMeeting(meetingId, whisperModelSize);
       await loadMeetingData();
       setMessage("Transcription finished.");
     } catch (err) {
@@ -274,7 +282,24 @@ export default function MeetingPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              Whisper model
+              <select
+                value={whisperModelSize}
+                onChange={(event) =>
+                  setWhisperModelSize(event.target.value as WhisperModelSize)
+                }
+                disabled={working !== null}
+                className="min-h-11 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                {WHISPER_MODEL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               onClick={() => void handleTranscribe()}
               disabled={working !== null}

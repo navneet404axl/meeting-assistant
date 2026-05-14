@@ -1,0 +1,7 @@
+{
+  "python.defaultInterpreterPath": "/Users/nav/Rutgers/meetingProject/meeting-assistant/backend/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.extraPaths": [
+    "/Users/nav/Rutgers/meetingProject/meeting-assistant/backend"
+  ]
+}

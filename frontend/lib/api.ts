@@ -93,6 +93,8 @@ export type SpeakerListResponse = {
   speakers: SpeakerOption[];
 };
 
+export type WhisperModelSize = "small.en" | "medium.en" | "large-v3-turbo";
+
 export async function createMeeting(formData: FormData) {
   return requestJson<{ meeting_id: number; status: string }>("/api/meetings", {
     method: "POST",
@@ -116,9 +118,19 @@ export async function getInsights(meetingId: string) {
   return requestJson<MeetingInsights>(`/api/meetings/${meetingId}/insights`);
 }
 
-export async function transcribeMeeting(meetingId: string) {
-  return requestJson<{ meeting_id: number; status: string; num_segments: number }>(
-    `/api/meetings/${meetingId}/transcribe`,
+export async function transcribeMeeting(
+  meetingId: string,
+  modelSize: WhisperModelSize,
+) {
+  const params = new URLSearchParams({ model_size: modelSize });
+
+  return requestJson<{
+    meeting_id: number;
+    status: string;
+    model_size: WhisperModelSize;
+    num_segments: number;
+  }>(
+    `/api/meetings/${meetingId}/transcribe?${params.toString()}`,
     {
       method: "POST",
     },
